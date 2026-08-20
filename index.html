@@ -241,11 +241,11 @@
   }
   #chartWatermark .wm-sym{
     font-family:var(--sans);font-weight:900;font-size:110px;line-height:0.9;
-    color:rgba(255,255,255,0.035);letter-spacing:2px;
+    color:rgba(255,255,255,0.85);letter-spacing:2px;
   }
   #chartWatermark .wm-tf{
     font-family:var(--mono);font-weight:700;font-size:32px;
-    color:rgba(255,255,255,0.025);letter-spacing:6px;
+    color:rgba(255,255,255,0.5);letter-spacing:6px;
   }
 
   #drawCanvas{position:absolute;inset:0;width:100%;height:100%;z-index:4;pointer-events:none;}
@@ -484,6 +484,7 @@
         <div class="chart-zoom-controls">
           <button class="zoom-btn" id="zoomInBtn" title="Zoom In (+)">+</button>
           <button class="zoom-btn" id="zoomOutBtn" title="Zoom Out (−)">−</button>
+          <button class="zoom-btn" id="yAxisFitBtn" title="Auto-Fit Y-Axis">↕</button>
           <button class="zoom-btn" id="zoomResetBtn" title="Reset View (Auto-Fit)">⟲</button>
         </div>
 
@@ -517,9 +518,7 @@ function toggleSettingsDrawer(){
 (function(){
 "use strict";
 
-const DEFAULT_WATCHLIST = ['AAPL','MSFT','NVDA','AMD','GOOGL','META','AMZN','TSLA','AVGO','CRM',
-  'NFLX','ADBE','CRWD','PLTR','SOFI','COIN','MARA','RIOT','MU','SMCI','QCOM','INTC','UBER','SHOP',
-  'SNOW','PANW','NOW','ORCL','JPM','BAC','SPY','QQQ','IWM','XLE','XOM','CVX','F','GM','RIVN','DKNG'];
+const DEFAULT_WATCHLIST = ['AA','AAL','AAPL','ABBV','ABNB','ABT','ACB','ACGL','ACN','ADBE','ADI','ADP','ADSK','AEM','AEP','AFL','AFRM','AGG','AGNC','AI','AIG','ALB','ALHC','ALL','AMC','AMAT','AMD','AMGN','AMP','AMT','AMZN','ANET','APA','APH','APO','APP','AR','ARKK','ARM','ARQQ','ASML','ASPI','ASTS','AVDL','AVGO','AXP','AXON','AZN','BA','BABA','BAC','BAM','BE','BIDU','BILL','BITO','BK','BKNG','BKR','BLK','BLUE','BMY','BND','BSX','BULL','BX','C','CARR','CAT','CAVA','CB','CC','CCJ','CCL','CDNS','CEG','CELH','CF','CGC','CHK','CHPT','CHRW','CHTR','CHWY','CI','CL','CLMT','CLOV','CLSK','CMCSA','CME','CMG','CMI','CNQ','COF','COIN','COP','COR','CORZ','COST','COTY','CPNG','CPRT','CRBS','CRM','CRML','CRWD','CRWV','CRSP','CSX','CTAS','CTVA','CVS','CVX','CVNA','D','DAC','DAL','DAR','DBC','DBX','DD','DDD','DDOG','DE','DELL','DFS','DG','DHI','DIA','DIS','DJT','DKNG','DLR','DLTR','DM','DOV','DOW','DRI','DUK','EAT','EBAY','ECL','ED','EEM','EFA','ELV','EMR','ENPH','ENR','EOG','EPAM','EQIX','EQT','EQX','ETN','ETR','EW','EXC','EXE','EXPE','F','FANG','FAST','FCX','FDX','FI','FIS','FITB','FSLR','FTNT','FXI','GD','GDX','GDXJ','GE','GEV','GILD','GILT','GIS','GLD','GLW','GM','GME','GNRC','GOGL','GOLD','GOOG','GOOGL','GPN','GS','GSK','HAL','HD','HEI','HIG','HIMS','HLT','HON','HOOD','HPE','HPQ','HST','HUBB','HUM','HUT','HYG','IBIT','IBM','ICE','ICLN','IDXX','IEF','ILMN','INDA','INTC','INTU','IONQ','IONS','IQ','IREN','IRM','ISRG','ITW','IWM','IYR','J','JBHT','JBLU','JCI','JD','JMIA','JNJ','JPM','K','KHC','KMB','KMI','KO','KR','KRE','KSS','L','LAC','LCID','LDOS','LEN','LEU','LHX','LI','LIN','LLY','LMT','LNG','LOW','LQD','LSCC','LULU','LUNR','LUV','LVS','LYFT','LYV','MA','MAR','MARA','MAS','MATX','MBLY','MBOT','MCD','MCHP','MCK','MDT','MDY','MELI','MET','META','MGM','MHK','MKC','MKFG','MKL','MLM','MMC','MMM','MNDY','MNST','MO','MOD','MOS','MP','MPWR','MRA','MRK','MRNA','MRVL','MS','MSFT','MSI','MSOS','MSTR','MTB','MTD','MTUM','MU','NCLH','NEE','NEM','NET','NEXT','NFLX','NIO','NKE','NNE','NOC','NOW','NRG','NSC','NTLA','NTRS','NU','NUE','NVAX','NVDA','NVR','NVS','OKLO','OKTA','ON','ONDS','OPEN','ORCL','OTIS','OWL','OXY','PANW','PATH','PAYX','PBR','PCG','PDD','PEP','PFE','PG','PGEN','PGR','PH','PHM','PINS','PKG','PL','PLD','PLTR','PLUG','PM','PNC','PNR','POOL','POWL','PPG','PRU','PSA','PSKY','PWR','PYPL','QBTS','QCOM','QD','QQQ','QS','QUBT','RCL','RDW','REGN','RELY','RGTI','RIO','RIOT','RIVN','RKLB','RKT','RMD','RNR','ROBO','ROK','ROKU','ROL','ROP','ROST','RSG','RTX','RVMD','RXRX','S','SATS','SAVA','SB','SBLK','SBUX','SCHD','SCHW','SCO','SERV','SHW','SHY','SJM','SLB','SLV','SMC','SMCI','SMH','SMR','SNAP','SNDL','SNOW','SNPS','SNY','SO','SOFI','SOUN','SOXL','SOXS','SPGI','SPY','SPXU','SQ','SQQQ','SRPT','SSYS','STZ','SYK','SYM','SYY','T','TAP','TCEHY','TCOM','TDOC','TENB','TER','TEVA','TFC','TFX','TGT','TIGR','TIP','TJX','TLT','TLRY','TMDX','TMO','TMUS','TNA','TOL','TRMD','TRV','TSCO','TSLA','TSM','TT','TTD','TXN','TZA','U','UAL','UBER','UCO','UEC','UNH','UNG','UNP','UPRO','UPS','UPST','URI','USB','USO','UVXY','V','VALE','VEA','VLO','VMC','VNQ','VOO','VRT','VRTX','VTI','VZ','VST','VXX','VYM','VWO','WDC','WFC','WMB','WMT','WOLF','WTW','WULF','WYNN','XLB','XLC','XLE','XLF','XLI','XLK','XLP','XLRE','XLU','XLV','XLY','XO','XOM','XPEV','XYL','YUM','Z','ZIM','ZS','ZTS'];
 
 const IND = {
   emaLen: 34,
@@ -938,7 +937,8 @@ function initCharts(){
     priceLineVisible: false,
     lastValueVisible: false,
   });
-  pvtSignalSeries = lowerChart.addLineSeries({color:'#ff9800', lineWidth:1.4, priceLineVisible:false, lastValueVisible:false});
+ 
+  
   zeroLineSeries = lowerChart.addLineSeries({color:'#3c4552', lineWidth:1, lineStyle:2, priceLineVisible:false, lastValueVisible:false});
 
   priceChart.timeScale().subscribeVisibleLogicalRangeChange(range=>{
@@ -1137,6 +1137,12 @@ function setupZoomControls(){
     });
   });
 
+  document.getElementById('yAxisFitBtn').addEventListener('click', () => {
+    if(!priceChart || !lowerChart) return;
+    priceChart.priceScale('right').applyOptions({ autoScale: true });
+    lowerChart.priceScale('right').applyOptions({ autoScale: true });
+  });
+
   document.getElementById('zoomResetBtn').addEventListener('click', () => {
     if(!priceChart || !lowerChart) return;
     priceChart.timeScale().fitContent();
@@ -1171,6 +1177,8 @@ function renderChart(symbol, tfLabel, computed){
     if(!ok) return;
   }
   document.getElementById('placeholder').style.display = 'none';
+  document.getElementById('wmSym').textContent = symbol;
+  document.getElementById('wmTf').textContent = tfLabel;
   const {bars, ema34, trend, signal, histValue, histColor, bullish, bearish} = computed;
 
   const seenTimes = new Set();
@@ -1241,8 +1249,6 @@ function renderChart(symbol, tfLabel, computed){
 
   document.getElementById('headerSymInput').value = symbol;
   document.getElementById('symPrice').textContent = `$${last.c.toFixed(2)} · ${tfLabel}`;
-  document.getElementById('wmSym').textContent = symbol;
-  document.getElementById('wmTf').textContent = tfLabel;
 
   const currentTrend = trend[lastIdx];
   const isRecentStart = computed.uptrendStartRecent[lastIdx];
@@ -1966,6 +1972,18 @@ function renderSidebarList(){
 /* Scanner: Detects Uptrend Start within the last 3 candles */
 async function runScan(){
   if(!state.apiKey || !state.apiSecret){ toast('Add Alpaca API keys in Settings.', true); return; }
+
+  // Always sync the watchlist textarea into state first, in case the user
+  // edited it but clicked "Scan Breakouts" instead of "Save & Connect".
+  const wlField = document.getElementById('watchlist');
+  if(wlField){
+    const wl = wlField.value.split(',').map(s=>s.trim().toUpperCase()).filter(Boolean);
+    if(wl.length) {
+      state.watchlist = wl;
+      saveSettings();
+    }
+  }
+
   const symbols = state.watchlist;
   if(!symbols.length){ toast('Watchlist is empty.', true); return; }
 
