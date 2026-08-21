@@ -176,6 +176,7 @@
   }
   .badge.bull{background:rgba(14,187,35,.15);color:var(--green);}
   .badge.bear{background:rgba(255,92,108,.15);color:var(--red);}
+  .badge.near{background:rgba(62,166,255,.15);color:var(--accent);}
 
   .fresh{
     font-size:8.5px;font-family:var(--mono);font-weight:700;padding:2px 4px;border-radius:3px;
@@ -358,7 +359,7 @@
 
   <div id="topbar">
     <button class="pill-btn" id="menuBtn">☰ Watchlist</button>
-    <div id="brand"><div class="dot"></div><span>SuperCloud</span><small>EMA 34 · PVT Histogram</small></div>
+    <div id="brand"><div class="dot"></div><span>SuperCloud</span><small>EMA 34/40 Cloud · PVT Histogram</small></div>
 
     <div class="tf-toggle" id="tfToggle">
       <button data-tf="1D" class="active">1D</button>
@@ -407,6 +408,16 @@
       <label>Watchlist (comma separated)</label>
       <textarea id="watchlist"></textarea>
     </div>
+    <div class="field" style="max-width:150px;">
+      <label>Near EMA34 Scan (%)</label>
+      <input type="number" id="nearEmaPct" min="0.1" max="20" step="0.1" placeholder="2">
+    </div>
+    <div class="field" style="max-width:150px;justify-content:flex-end;">
+      <label style="display:flex;flex-direction:row;align-items:center;gap:6px;cursor:pointer;text-transform:none;letter-spacing:normal;font-size:12px;color:var(--text);">
+        <input type="checkbox" id="showCloudToggle" style="width:14px;height:14px;padding:0;background:none;border:none;">
+        EMA 34/40 Cloud
+      </label>
+    </div>
     <div class="field" style="flex:0;justify-content:flex-end;min-width:auto;">
       <button class="pill-btn primary" id="saveSettingsBtn">Save & Connect</button>
     </div>
@@ -418,6 +429,7 @@
       <div class="sidebar-tabs">
         <button class="sidebar-tab active" id="tabWatchlist">Watchlist</button>
         <button class="sidebar-tab" id="tabScanHits">Scan Hits (<span id="tabHitCount">0</span>)</button>
+        <button class="sidebar-tab" id="tabNearEma">Near EMA34 (<span id="tabNearCount">0</span>)</button>
       </div>
 
       <div id="sidebarHead">
@@ -522,6 +534,7 @@ const DEFAULT_WATCHLIST = ['AA','AAL','AAPL','ABBV','ABNB','ABT','ACB','ACGL','A
 
 const IND = {
   emaLen: 34,
+  ema2Len: 40,
   fastLen: 5,
   slowLen: 13,
   rsiLen: 14,
@@ -529,7 +542,11 @@ const IND = {
   signalLength: 21,
   signalType: 'SMA',
   showSignal: true,
-  showZeroLine: true
+  showZeroLine: true,
+  showCloud: true,
+  cloudBullColor: 'rgba(14, 187, 35, 0.16)',
+  cloudBearColor: 'rgba(255, 92, 108, 0.16)',
+  nearEmaPct: 2
 };
 
 const state = {
@@ -648,6 +665,8 @@ function loadSettings(){
       if(s.lowerPanelHeight && s.lowerPanelHeight >= 50){
         state.lowerPanelHeight = s.lowerPanelHeight;
       }
+      if(typeof s.showCloud === 'boolean') IND.showCloud = s.showCloud;
+      if(typeof s.nearEmaPct === 'number' && s.nearEmaPct > 0) IND.nearEmaPct = s.nearEmaPct;
     } else {
       state.watchlist = DEFAULT_WATCHLIST.slice();
     }
@@ -660,7 +679,9 @@ function saveSettings(){
     apiSecret: state.apiSecret,
     feed: state.feed,
     watchlist: state.watchlist,
-    lowerPanelHeight: state.lowerPanelHeight
+    lowerPanelHeight: state.lowerPanelHeight,
+    showCloud: IND.showCloud,
+    nearEmaPct: IND.nearEmaPct
   }));
 }
 
@@ -821,10 +842,18 @@ function computeIndicators(bars){
   const volume = bars.map(b=>b.v || 0);
 
   const ema34 = ewm(close, IND.emaLen);
+  const ema40 = ewm(close, IND.ema2Len);
 
   const trend = ema34.map((e, i) => {
     if(Number.isNaN(e)) return 0;
     return close[i] >= e ? 1 : -1;
+  });
+
+  // EMA34 vs EMA40 distance, used by the "Near EMA34" scanner
+  const emaDistPct = close.map((c, i) => {
+    const e = ema34[i];
+    if(Number.isNaN(e) || !Number.isFinite(e) || e === 0) return null;
+    return ((c - e) / e) * 100;
   });
 
   const uptrendStartRecent = new Array(n).fill(false);
@@ -901,11 +930,110 @@ function computeIndicators(bars){
     }
   }
 
-  return { bars, ema34, trend, uptrendStartRecent, pvt, signal, histValue, histColor, bullish, bearish };
+  return { bars, ema34, ema40, trend, emaDistPct, uptrendStartRecent, pvt, signal, histValue, histColor, bullish, bearish };
+}
+
+/* =========================================================
+   EMA 34/40 Cloud — rendered as a lightweight-charts "series
+   primitive" so the shaded band is drawn BEHIND the candles
+   (no separate EMA lines are plotted — cloud fill only).
+========================================================= */
+function buildCloudSegments(validBars, upperArr, lowerArr){
+  const pts = [];
+  for(const v of validBars){
+    const a = upperArr[v.idx], b = lowerArr[v.idx];
+    if(Number.isNaN(a) || Number.isNaN(b) || !Number.isFinite(a) || !Number.isFinite(b)) continue;
+    pts.push({ time: v.time, upper: Math.max(a, b), lower: Math.min(a, b), bull: a >= b });
+  }
+  const segments = [];
+  let seg = null;
+  for(let i = 0; i < pts.length; i++){
+    const p = pts[i];
+    if(!seg || seg.bull !== p.bull){
+      if(seg){ seg.points.push(p); segments.push(seg); } // shared boundary point for a clean crossover
+      seg = { bull: p.bull, points: [p] };
+    } else {
+      seg.points.push(p);
+    }
+  }
+  if(seg) segments.push(seg);
+  return segments;
+}
+
+function createEmaCloudPrimitive(){
+  class CloudRenderer {
+    constructor(viewSegments){ this._segments = viewSegments; }
+    draw(){ /* nothing in the foreground layer */ }
+    drawBackground(target){
+      const segments = this._segments;
+      if(!segments || !segments.length) return;
+      target.useBitmapCoordinateSpace(scope => {
+        const ctx = scope.context;
+        ctx.save();
+        ctx.scale(scope.horizontalPixelRatio, scope.verticalPixelRatio);
+        segments.forEach(seg => {
+          const pts = seg.points;
+          if(pts.length < 2) return;
+          ctx.beginPath();
+          ctx.moveTo(pts[0].x, pts[0].yUpper);
+          for(let i = 1; i < pts.length; i++) ctx.lineTo(pts[i].x, pts[i].yUpper);
+          for(let i = pts.length - 1; i >= 0; i--) ctx.lineTo(pts[i].x, pts[i].yLower);
+          ctx.closePath();
+          ctx.fillStyle = seg.bull ? IND.cloudBullColor : IND.cloudBearColor;
+          ctx.fill();
+        });
+        ctx.restore();
+      });
+    }
+  }
+
+  class CloudPaneView {
+    constructor(source){ this._source = source; this._viewData = []; }
+    update(){
+      const chart = this._source._chart, series = this._source._series;
+      if(!chart || !series){ this._viewData = []; return; }
+      const timeScale = chart.timeScale();
+      this._viewData = this._source._segments.map(seg => ({
+        bull: seg.bull,
+        points: seg.points.map(p => ({
+          x: timeScale.timeToCoordinate(p.time),
+          yUpper: series.priceToCoordinate(p.upper),
+          yLower: series.priceToCoordinate(p.lower),
+        })).filter(pt => pt.x !== null && pt.yUpper !== null && pt.yLower !== null)
+      })).filter(seg => seg.points.length >= 2);
+    }
+    renderer(){ return new CloudRenderer(this._viewData); }
+    zOrder(){ return 'bottom'; }
+  }
+
+  class CloudPrimitive {
+    constructor(){
+      this._chart = null;
+      this._series = null;
+      this._segments = [];
+      this._requestUpdate = null;
+      this._paneViews = [new CloudPaneView(this)];
+    }
+    attached(param){
+      this._chart = param.chart;
+      this._series = param.series;
+      this._requestUpdate = param.requestUpdate || null;
+    }
+    detached(){ this._chart = null; this._series = null; }
+    updateAllViews(){ this._paneViews.forEach(v => v.update()); }
+    paneViews(){ return this._paneViews; }
+    setSegments(segments){
+      this._segments = segments || [];
+      this.updateAllViews();
+      if(this._requestUpdate) this._requestUpdate();
+    }
+  }
+
+  return new CloudPrimitive();
 }
 
 /* Charts */
-let priceChart, candleSeries, ema34Series;
+let priceChart, candleSeries, ema34Series, emaCloudPrimitive;
 let lowerChart, histSeries, pvtSignalSeries, zeroLineSeries;
 
 function initCharts(){
@@ -925,6 +1053,17 @@ function initCharts(){
     borderVisible: false,
     wickVisible: true,
   });
+
+  emaCloudPrimitive = null;
+  try{
+    if(typeof candleSeries.attachPrimitive === 'function'){
+      emaCloudPrimitive = createEmaCloudPrimitive();
+      candleSeries.attachPrimitive(emaCloudPrimitive);
+    }
+  }catch(e){
+    console.warn('EMA cloud primitive unsupported:', e);
+    emaCloudPrimitive = null;
+  }
 
   ema34Series = priceChart.addLineSeries({
     lineWidth: 2,
@@ -1179,7 +1318,7 @@ function renderChart(symbol, tfLabel, computed){
   document.getElementById('placeholder').style.display = 'none';
   document.getElementById('wmSym').textContent = symbol;
   document.getElementById('wmTf').textContent = tfLabel;
-  const {bars, ema34, trend, signal, histValue, histColor, bullish, bearish} = computed;
+  const {bars, ema34, ema40, trend, signal, histValue, histColor, bullish, bearish} = computed;
 
   const seenTimes = new Set();
   const validBars = [];
@@ -1215,6 +1354,11 @@ function renderChart(symbol, tfLabel, computed){
     color: lastTrend === 1 ? '#0ebb23' : '#ff5c6c'
   });
   ema34Series.setData(emaData);
+
+  if(emaCloudPrimitive){
+    const cloudSegments = (IND.showCloud && ema40) ? buildCloudSegments(validBars, ema34, ema40) : [];
+    emaCloudPrimitive.setSegments(cloudSegments);
+  }
 
   const histData = validBars.map(v => ({
     time: v.time,
@@ -1885,6 +2029,8 @@ function getActiveDisplayList(){
       const t4 = c4H ? c4H.trend[c4H.trend.length-1] : 0;
       const u1 = c1D ? c1D.uptrendStartRecent[c1D.uptrendStartRecent.length-1] : false;
       const u4 = c4H ? c4H.uptrendStartRecent[c4H.uptrendStartRecent.length-1] : false;
+      const ed = c1D ? c1D.emaDistPct[c1D.emaDistPct.length-1] : null;
+      const edAbs = ed === null ? null : Math.abs(ed);
       return {
         symbol: sym,
         price: p,
@@ -1892,9 +2038,14 @@ function getActiveDisplayList(){
         trend4H: t4,
         uptrendStart1D: u1,
         uptrendStart4H: u4,
+        emaDist: ed,
+        emaDistAbs: edAbs,
+        nearEma34: t1 === 1 && edAbs !== null && edAbs <= IND.nearEmaPct,
         score: (u1 ? 3 : 0) + (u4 ? 2 : 0) + (t1 === 1 ? 1 : 0)
       };
     });
+  } else if(state.activeTab === 'near'){
+    list = state.scanResults.filter(r => r.nearEma34);
   } else {
     list = state.scanResults.filter(r => r.uptrendStart1D || r.uptrendStart4H);
   }
@@ -1906,8 +2057,8 @@ function getActiveDisplayList(){
     if(typeof valA === 'string'){
       return state.sortAsc ? valA.localeCompare(valB) : valB.localeCompare(valA);
     }
-    valA = valA || 0;
-    valB = valB || 0;
+    valA = (valA === null || valA === undefined) ? Infinity : valA;
+    valB = (valB === null || valB === undefined) ? Infinity : valB;
     return state.sortAsc ? valA - valB : valB - valA;
   });
 
@@ -1919,9 +2070,30 @@ function renderSidebarList(){
   const items = getActiveDisplayList();
 
   const freshCount = state.scanResults.filter(r=>r.uptrendStart1D || r.uptrendStart4H).length;
+  const nearCount = state.scanResults.filter(r=>r.nearEma34).length;
   document.getElementById('tabHitCount').textContent = freshCount;
+  document.getElementById('tabNearCount').textContent = nearCount;
   document.getElementById('hitCount').textContent = `${items.length} items`;
-  document.getElementById('sidebarMetaTitle').textContent = state.activeTab === 'watchlist' ? 'Watchlist (1D / 4H Trends)' : 'Fresh Breakout Hits (≤3 Bars)';
+
+  const titles = {
+    watchlist: 'Watchlist (1D / 4H Trends)',
+    hits: 'Fresh Breakout Hits (≤3 Bars)',
+    near: `Uptrend & Near EMA34 (±${IND.nearEmaPct}%)`
+  };
+  document.getElementById('sidebarMetaTitle').textContent = titles[state.activeTab] || titles.watchlist;
+
+  // The last column doubles up: "TAG" (fresh-breakout score) everywhere except
+  // the Near EMA34 tab, where it becomes a sortable distance-to-EMA34 column.
+  const tagHeader = document.querySelector('.list-table-header .th.col-tag');
+  if(tagHeader){
+    if(state.activeTab === 'near'){
+      tagHeader.dataset.col = 'emaDistAbs';
+      tagHeader.childNodes[0].textContent = 'DIST% ';
+    } else {
+      tagHeader.dataset.col = 'score';
+      tagHeader.childNodes[0].textContent = 'TAG ';
+    }
+  }
 
   document.querySelectorAll('.list-table-header .th').forEach(th => {
     const col = th.dataset.col;
@@ -1936,7 +2108,12 @@ function renderSidebarList(){
   });
 
   if(!items.length){
-    listEl.innerHTML = `<div id="emptyState">${state.activeTab === 'watchlist' ? 'No symbols in watchlist.' : 'No scan hits found. Click "▶ Scan Breakouts" above.'}</div>`;
+    const emptyMsgs = {
+      watchlist: 'No symbols in watchlist.',
+      hits: 'No scan hits found. Click "▶ Scan Breakouts" above.',
+      near: 'No symbols in an uptrend near EMA34. Click "▶ Scan Breakouts" above.'
+    };
+    listEl.innerHTML = `<div id="emptyState">${emptyMsgs[state.activeTab] || emptyMsgs.watchlist}</div>`;
     return;
   }
 
@@ -1949,14 +2126,22 @@ function renderSidebarList(){
     const pDisplay = r.price > 0 ? `$${r.price.toFixed(2)}` : '—';
     const b1D = r.trend1D === 1 ? '<span class="badge bull">▲</span>' : (r.trend1D === -1 ? '<span class="badge bear">▼</span>' : '<span class="badge">—</span>');
     const b4H = r.trend4H === 1 ? '<span class="badge bull">▲</span>' : (r.trend4H === -1 ? '<span class="badge bear">▼</span>' : '<span class="badge">—</span>');
-    const freshTag = (r.uptrendStart1D || r.uptrendStart4H) ? '<span class="fresh">NEW</span>' : '';
+
+    let tagCell;
+    if(state.activeTab === 'near'){
+      const d = r.emaDist;
+      const dLabel = (d === null || d === undefined) ? '—' : `${d >= 0 ? '+' : ''}${d.toFixed(2)}%`;
+      tagCell = `<span class="badge near">${dLabel}</span>`;
+    } else {
+      tagCell = (r.uptrendStart1D || r.uptrendStart4H) ? '<span class="fresh">NEW</span>' : '';
+    }
 
     row.innerHTML = `
       <div class="sym">${r.symbol}</div>
       <div class="price-val">${pDisplay}</div>
       <div class="t-cell">${b1D}</div>
       <div class="t-cell">${b4H}</div>
-      <div style="flex:1;display:flex;justify-content:flex-end;">${freshTag}</div>
+      <div style="flex:1;display:flex;justify-content:flex-end;">${tagCell}</div>
     `;
 
     row.addEventListener('click', () => {
@@ -1967,6 +2152,13 @@ function renderSidebarList(){
   });
   listEl.innerHTML = '';
   listEl.appendChild(frag);
+}
+
+/* Re-evaluate the Near-EMA34 flag against the current threshold without a full rescan */
+function recomputeNearFlags(){
+  state.scanResults.forEach(r => {
+    r.nearEma34 = r.trend1D === 1 && r.emaDistAbs !== null && r.emaDistAbs !== undefined && r.emaDistAbs <= IND.nearEmaPct;
+  });
 }
 
 /* Scanner: Detects Uptrend Start within the last 3 candles */
@@ -2018,12 +2210,20 @@ async function runScan(){
       const uptrendStart1D = c1D.uptrendStartRecent[i1];
       const uptrendStart4H = c4H.uptrendStartRecent[i4];
 
+      // "Near EMA34" scanner: daily uptrend, price sitting close to the EMA34 (a common pullback-to-trend entry zone)
+      const emaDist = c1D.emaDistPct[i1];
+      const emaDistAbs = emaDist === null ? null : Math.abs(emaDist);
+      const nearEma34 = trend1D === 1 && emaDistAbs !== null && emaDistAbs <= IND.nearEmaPct;
+
       results.push({
         symbol: sym,
         trend1D,
         trend4H,
         uptrendStart1D,
         uptrendStart4H,
+        emaDist,
+        emaDistAbs,
+        nearEma34,
         score: (uptrendStart1D ? 3 : 0) + (uptrendStart4H ? 2 : 0) + (trend1D===1?1:0),
         price: c1D.bars[i1].c,
       });
@@ -2032,7 +2232,8 @@ async function runScan(){
     state.scanResults = results;
     renderSidebarList();
     const hitsCount = results.filter(r=>r.uptrendStart1D || r.uptrendStart4H).length;
-    toast(`Scan complete: ${hitsCount} fresh breakouts found.`);
+    const nearCount = results.filter(r=>r.nearEma34).length;
+    toast(`Scan complete: ${hitsCount} fresh breakouts, ${nearCount} near EMA34.`);
   }catch(e){
     console.error(e);
     listEl.innerHTML = `<div id="emptyState">Scan failed: ${e.message}</div>`;
@@ -2059,6 +2260,8 @@ function initUI(){
   document.getElementById('apiSecret').value = state.apiSecret;
   document.getElementById('feedSelect').value = state.feed;
   document.getElementById('watchlist').value = state.watchlist.join(', ');
+  document.getElementById('nearEmaPct').value = IND.nearEmaPct;
+  document.getElementById('showCloudToggle').checked = IND.showCloud;
 
   const settingsBtn = document.getElementById('settingsBtn');
   if(settingsBtn){
@@ -2076,16 +2279,26 @@ function initUI(){
   /* Tab Switching */
   const tabWl = document.getElementById('tabWatchlist');
   const tabHits = document.getElementById('tabScanHits');
+  const tabNear = document.getElementById('tabNearEma');
+  const allTabs = [tabWl, tabHits, tabNear];
   tabWl.addEventListener('click', ()=>{
     state.activeTab = 'watchlist';
+    allTabs.forEach(t => t.classList.remove('active'));
     tabWl.classList.add('active');
-    tabHits.classList.remove('active');
     renderSidebarList();
   });
   tabHits.addEventListener('click', ()=>{
     state.activeTab = 'hits';
+    allTabs.forEach(t => t.classList.remove('active'));
     tabHits.classList.add('active');
-    tabWl.classList.remove('active');
+    renderSidebarList();
+  });
+  tabNear.addEventListener('click', ()=>{
+    state.activeTab = 'near';
+    allTabs.forEach(t => t.classList.remove('active'));
+    tabNear.classList.add('active');
+    state.sortCol = 'emaDistAbs';
+    state.sortAsc = true;
     renderSidebarList();
   });
 
@@ -2179,6 +2392,22 @@ function initUI(){
   });
 
   document.getElementById('scanBtn').addEventListener('click', runScan);
+
+  document.getElementById('showCloudToggle').addEventListener('change', (e)=>{
+    IND.showCloud = e.target.checked;
+    saveSettings();
+    if(state.currentSymbol) loadSymbol(state.currentSymbol);
+  });
+
+  document.getElementById('nearEmaPct').addEventListener('change', (e)=>{
+    const v = parseFloat(e.target.value);
+    if(!Number.isNaN(v) && v > 0){
+      IND.nearEmaPct = v;
+      saveSettings();
+      recomputeNearFlags();
+      renderSidebarList();
+    }
+  });
 
   document.getElementById('quickLoadBtn').addEventListener('click', ()=>{
     const v = document.getElementById('quickSym').value;
