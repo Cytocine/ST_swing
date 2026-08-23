@@ -546,7 +546,9 @@ const IND = {
   showCloud: true,
   cloudBullColor: 'rgba(14, 187, 35, 0.16)',
   cloudBearColor: 'rgba(255, 92, 108, 0.16)',
-  nearEmaPct: 2
+  nearEmaPct: 2,
+  atrLen: 14,
+  atrMinDaily: 0.5
 };
 
 const state = {
@@ -867,6 +869,16 @@ function computeIndicators(bars){
     }
   }
 
+  // Average True Range (Wilder-smoothed), used by the ATR volatility filter
+  const high = bars.map(b=>b.h);
+  const low = bars.map(b=>b.l);
+  const trueRange = bars.map((b,i) => {
+    if(i === 0) return b.h - b.l;
+    const prevClose = close[i-1];
+    return Math.max(b.h - b.l, Math.abs(b.h - prevClose), Math.abs(b.l - prevClose));
+  });
+  const atr = ewmWilder(trueRange, IND.atrLen);
+
   const emaFast = ewm(close, IND.fastLen);
   const emaSlow = ewm(close, IND.slowLen);
 
@@ -930,7 +942,7 @@ function computeIndicators(bars){
     }
   }
 
-  return { bars, ema34, ema40, trend, emaDistPct, uptrendStartRecent, pvt, signal, histValue, histColor, bullish, bearish };
+  return { bars, ema34, ema40, trend, emaDistPct, uptrendStartRecent, pvt, signal, histValue, histColor, bullish, bearish, atr };
 }
 
 /* =========================================================
@@ -2027,8 +2039,10 @@ function getActiveDisplayList(){
       const p = c1D ? c1D.bars[c1D.bars.length-1].c : 0;
       const t1 = c1D ? c1D.trend[c1D.trend.length-1] : 0;
       const t4 = c4H ? c4H.trend[c4H.trend.length-1] : 0;
-      const u1 = c1D ? c1D.uptrendStartRecent[c1D.uptrendStartRecent.length-1] : false;
-      const u4 = c4H ? c4H.uptrendStartRecent[c4H.uptrendStartRecent.length-1] : false;
+      const atrDaily = c1D ? c1D.atr[c1D.atr.length-1] : null;
+      const atrPass = atrDaily !== null && atrDaily !== undefined && !Number.isNaN(atrDaily) && atrDaily > IND.atrMinDaily;
+      const u1 = atrPass && (c1D ? c1D.uptrendStartRecent[c1D.uptrendStartRecent.length-1] : false);
+      const u4 = atrPass && (c4H ? c4H.uptrendStartRecent[c4H.uptrendStartRecent.length-1] : false);
       const ed = c1D ? c1D.emaDistPct[c1D.emaDistPct.length-1] : null;
       const edAbs = ed === null ? null : Math.abs(ed);
       return {
@@ -2040,7 +2054,9 @@ function getActiveDisplayList(){
         uptrendStart4H: u4,
         emaDist: ed,
         emaDistAbs: edAbs,
-        nearEma34: t1 === 1 && edAbs !== null && edAbs <= IND.nearEmaPct,
+        nearEma34: atrPass && t1 === 1 && edAbs !== null && edAbs <= IND.nearEmaPct,
+        atrDaily,
+        atrPass,
         score: (u1 ? 3 : 0) + (u4 ? 2 : 0) + (t1 === 1 ? 1 : 0)
       };
     });
@@ -2157,7 +2173,7 @@ function renderSidebarList(){
 /* Re-evaluate the Near-EMA34 flag against the current threshold without a full rescan */
 function recomputeNearFlags(){
   state.scanResults.forEach(r => {
-    r.nearEma34 = r.trend1D === 1 && r.emaDistAbs !== null && r.emaDistAbs !== undefined && r.emaDistAbs <= IND.nearEmaPct;
+    r.nearEma34 = !!r.atrPass && r.trend1D === 1 && r.emaDistAbs !== null && r.emaDistAbs !== undefined && r.emaDistAbs <= IND.nearEmaPct;
   });
 }
 
@@ -2207,13 +2223,19 @@ async function runScan(){
       const i1 = c1D.bars.length-1, i4 = c4H.bars.length-1;
       const trend1D = c1D.trend[i1];
       const trend4H = c4H.trend[i4];
-      const uptrendStart1D = c1D.uptrendStartRecent[i1];
-      const uptrendStart4H = c4H.uptrendStartRecent[i4];
+
+      // ATR volatility filter: daily ATR must be above the configured minimum
+      // for a symbol to qualify as a breakout hit or near-EMA34 pullback.
+      const atrDaily = c1D.atr[i1];
+      const atrPass = atrDaily !== null && atrDaily !== undefined && !Number.isNaN(atrDaily) && atrDaily > IND.atrMinDaily;
+
+      const uptrendStart1D = atrPass && c1D.uptrendStartRecent[i1];
+      const uptrendStart4H = atrPass && c4H.uptrendStartRecent[i4];
 
       // "Near EMA34" scanner: daily uptrend, price sitting close to the EMA34 (a common pullback-to-trend entry zone)
       const emaDist = c1D.emaDistPct[i1];
       const emaDistAbs = emaDist === null ? null : Math.abs(emaDist);
-      const nearEma34 = trend1D === 1 && emaDistAbs !== null && emaDistAbs <= IND.nearEmaPct;
+      const nearEma34 = atrPass && trend1D === 1 && emaDistAbs !== null && emaDistAbs <= IND.nearEmaPct;
 
       results.push({
         symbol: sym,
@@ -2224,6 +2246,8 @@ async function runScan(){
         emaDist,
         emaDistAbs,
         nearEma34,
+        atrDaily,
+        atrPass,
         score: (uptrendStart1D ? 3 : 0) + (uptrendStart4H ? 2 : 0) + (trend1D===1?1:0),
         price: c1D.bars[i1].c,
       });
@@ -2233,7 +2257,8 @@ async function runScan(){
     renderSidebarList();
     const hitsCount = results.filter(r=>r.uptrendStart1D || r.uptrendStart4H).length;
     const nearCount = results.filter(r=>r.nearEma34).length;
-    toast(`Scan complete: ${hitsCount} fresh breakouts, ${nearCount} near EMA34.`);
+    const atrBlockedCount = results.filter(r=>!r.atrPass).length;
+    toast(`Scan complete: ${hitsCount} fresh breakouts, ${nearCount} near EMA34 (${atrBlockedCount} blocked by ATR<${IND.atrMinDaily} filter).`);
   }catch(e){
     console.error(e);
     listEl.innerHTML = `<div id="emptyState">Scan failed: ${e.message}</div>`;
