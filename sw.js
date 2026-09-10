@@ -1,7 +1,7 @@
 const CACHE_NAME = 'supercloud-terminal-v1';
 
 const APP_SHELL = [
-  './',
+  '.',
   "./",
   "./manifest.json",
   "./icon-192.png",
